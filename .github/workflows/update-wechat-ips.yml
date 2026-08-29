@@ -1,0 +1,62 @@
+name: Update WeChat IPs
+
+on:
+  schedule:
+    - cron: "0 17 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-wechat-ips
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: python -m pip install --requirement requirements.txt
+
+      - name: Run tests
+        run: python -m unittest discover -s tests -v
+
+      - name: Fetch WeChat IPs
+        env:
+          HTTP_DNS_DOMAIN: ${{ secrets.HTTP_DNS_DOMAIN }}
+          HTTP_DNS_PATH: ${{ secrets.HTTP_DNS_PATH }}
+          EDNS_IPS: ${{ vars.EDNS_IPS }}
+        run: python get_wechat_ips.py
+
+      - name: Replace release branch with a new root commit
+        run: |
+          cp wechat-ip-4.txt "$RUNNER_TEMP/wechat-ip-4.txt"
+          cp wechat-ip-6.txt "$RUNNER_TEMP/wechat-ip-6.txt"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout --orphan release-build
+          git rm -rf .
+          cp "$RUNNER_TEMP/wechat-ip-4.txt" wechat-ip-4.txt
+          cp "$RUNNER_TEMP/wechat-ip-6.txt" wechat-ip-6.txt
+          git add wechat-ip-4.txt wechat-ip-6.txt
+          git commit -m "Update WeChat IPs"
+          git push --force origin HEAD:release
+
+      - name: Purge jsDelivr cache
+        run: |
+          curl --fail --silent --show-error --retry 3 \
+            "https://purge.jsdelivr.net/gh/${{ github.repository }}@release/wechat-ip-4.txt"
+          curl --fail --silent --show-error --retry 3 \
+            "https://purge.jsdelivr.net/gh/${{ github.repository }}@release/wechat-ip-6.txt"
